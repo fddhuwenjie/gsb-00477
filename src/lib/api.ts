@@ -193,8 +193,8 @@ export const api = {
     join: (data: any) =>
       request<Waitlist>('/waitlist', { method: 'POST', body: JSON.stringify(data) }),
     cancel: (id: number) =>
-      request<void>(`/waitlist/${id}/cancel`, { method: 'PUT' }),
-    position: (id: number) => request<{ position: number }>(`/waitlist/${id}/position`),
+      request<{ idempotent: boolean; message?: string }>(`/waitlist/${id}/cancel`, { method: 'PUT' }),
+    position: (id: number) => request<{ position: number | null; status: string }>(`/waitlist/${id}/position`),
   },
   reports: {
     templates: () => request<ReportTemplate[]>('/reports/templates'),

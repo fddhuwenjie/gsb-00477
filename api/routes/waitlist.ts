@@ -10,12 +10,15 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
   const user = (req as any).user as User;
   const { status } = req.query;
   let sql = `SELECT w.*, e.name as equipment_name, u.name as student_name,
-             (SELECT COUNT(*) FROM waitlist w2
-              WHERE w2.equipment_id = w.equipment_id
-              AND w2.reserve_date = w.reserve_date
-              AND w2.time_slot = w.time_slot
-              AND w2.status = 'waiting'
-              AND w2.id < w.id) + 1 as position
+             CASE WHEN w.status = 'waiting' THEN
+               (SELECT COUNT(*) FROM waitlist w2
+                WHERE w2.equipment_id = w.equipment_id
+                AND w2.reserve_date = w.reserve_date
+                AND w2.time_slot = w.time_slot
+                AND w2.status = 'waiting'
+                AND w2.id <= w.id)
+             ELSE NULL END as position,
+             COALESCE(w.promoted_at, w.cancelled_at) as status_changed_at
              FROM waitlist w
              LEFT JOIN equipment e ON w.equipment_id = e.id
              LEFT JOIN users u ON w.student_id = u.id WHERE 1=1`;
@@ -85,7 +88,8 @@ router.post('/', authMiddleware, roleMiddleware('student'), (req: Request, res: 
      AND w2.reserve_date = w.reserve_date
      AND w2.time_slot = w.time_slot
      AND w2.status = 'waiting'
-     AND w2.id < w.id) + 1 as position
+     AND w2.id <= w.id) as position,
+    COALESCE(w.promoted_at, w.cancelled_at) as status_changed_at
     FROM waitlist w
     LEFT JOIN equipment e ON w.equipment_id = e.id
     LEFT JOIN users u ON w.student_id = u.id
@@ -107,8 +111,13 @@ router.put('/:id/cancel', authMiddleware, (req: Request, res: Response) => {
     return;
   }
 
-  db.prepare("UPDATE waitlist SET status = 'cancelled' WHERE id = ?").run(req.params.id);
-  res.json({ success: true });
+  if (entry.status !== 'waiting') {
+    res.json({ success: true, data: { idempotent: true, message: '该候补已处于非等待状态，无需取消' } });
+    return;
+  }
+
+  db.prepare("UPDATE waitlist SET status = 'cancelled', cancelled_at = datetime('now') WHERE id = ?").run(req.params.id);
+  res.json({ success: true, data: { idempotent: false } });
 });
 
 router.get('/:id/position', authMiddleware, (req: Request, res: Response) => {
@@ -119,23 +128,38 @@ router.get('/:id/position', authMiddleware, (req: Request, res: Response) => {
     return;
   }
 
+  if (entry.status !== 'waiting') {
+    res.json({ success: true, data: { position: null, status: entry.status } });
+    return;
+  }
+
   const position = db.prepare(`SELECT COUNT(*) as pos FROM waitlist
     WHERE equipment_id = ? AND reserve_date = ? AND time_slot = ?
-    AND status = 'waiting' AND id < ?`).get(
+    AND status = 'waiting' AND id <= ?`).get(
     entry.equipment_id, entry.reserve_date, entry.time_slot, entry.id
   ) as any;
 
-  res.json({ success: true, data: { position: position.pos + 1 } });
+  res.json({ success: true, data: { position: position.pos, status: entry.status } });
 });
 
 export function promoteWaitlist(equipment_id: number, reserve_date: string, time_slot: string): any {
+  const conflict = db.prepare(`SELECT id FROM reservations
+    WHERE equipment_id = ? AND reserve_date = ? AND time_slot = ? AND status IN ('pending', 'approved')`).get(
+    equipment_id, reserve_date, time_slot
+  );
+  if (conflict) return null;
+
   const entry: any = db.prepare(`SELECT * FROM waitlist
     WHERE equipment_id = ? AND reserve_date = ? AND time_slot = ? AND status = 'waiting'
     ORDER BY created_at ASC LIMIT 1`).get(equipment_id, reserve_date, time_slot);
 
   if (!entry) return null;
 
-  db.prepare("UPDATE waitlist SET status = 'promoted', promoted_at = datetime('now') WHERE id = ?").run(entry.id);
+  const updateResult = db.prepare(
+    "UPDATE waitlist SET status = 'promoted', promoted_at = datetime('now') WHERE id = ? AND status = 'waiting'"
+  ).run(entry.id);
+
+  if (updateResult.changes === 0) return null;
 
   const equipment: any = db.prepare('SELECT manager_id FROM equipment WHERE id = ?').get(equipment_id);
   const tutor_id = equipment?.manager_id || 1;
