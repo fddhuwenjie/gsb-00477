@@ -52,6 +52,7 @@ export interface Reservation {
   status: ReservationStatus;
   created_at: string;
   approved_at?: string;
+  waitlist_id?: number;
   equipment_name?: string;
   student_name?: string;
   tutor_name?: string;
@@ -71,6 +72,7 @@ export interface UsageLog {
   sample_count?: number;
   equipment_name?: string;
   user_name?: string;
+  reservation_waitlist_id?: number;
 }
 
 export interface FaultReport {
@@ -234,6 +236,7 @@ export interface Waitlist {
   status: WaitlistStatus;
   created_at: string;
   promoted_at?: string;
+  cancelled_at?: string;
   equipment_name?: string;
   student_name?: string;
   position?: number;

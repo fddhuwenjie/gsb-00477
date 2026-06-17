@@ -70,7 +70,8 @@ export function initDatabase() {
       purpose TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected','completed','cancelled')),
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      approved_at DATETIME
+      approved_at DATETIME,
+      waitlist_id INTEGER REFERENCES waitlist(id)
     );
 
     CREATE TABLE IF NOT EXISTS usage_logs (
@@ -198,7 +199,8 @@ export function initDatabase() {
       purpose TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'waiting' CHECK(status IN ('waiting','promoted','cancelled')),
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      promoted_at DATETIME
+      promoted_at DATETIME,
+      cancelled_at DATETIME
     );
 
     CREATE TABLE IF NOT EXISTS report_templates (
@@ -230,6 +232,18 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_waitlist_equipment ON waitlist(equipment_id, reserve_date, time_slot, status);
     CREATE INDEX IF NOT EXISTS idx_waitlist_student ON waitlist(student_id);
   `);
+
+  const reservationsCols = db.prepare("PRAGMA table_info(reservations)").all() as any[];
+  const hasWaitlistId = reservationsCols.some((c: any) => c.name === 'waitlist_id');
+  if (!hasWaitlistId) {
+    db.exec("ALTER TABLE reservations ADD COLUMN waitlist_id INTEGER REFERENCES waitlist(id)");
+  }
+
+  const waitlistCols = db.prepare("PRAGMA table_info(waitlist)").all() as any[];
+  const hasCancelledAt = waitlistCols.some((c: any) => c.name === 'cancelled_at');
+  if (!hasCancelledAt) {
+    db.exec("ALTER TABLE waitlist ADD COLUMN cancelled_at DATETIME");
+  }
 
   const labCount = db.prepare('SELECT COUNT(*) as count FROM labs').get() as { count: number };
   if (labCount.count === 0) {

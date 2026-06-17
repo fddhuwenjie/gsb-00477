@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Calendar, AlertTriangle, Wrench, Info, Package } from 'lucide-react';
+import { ArrowLeft, Calendar, AlertTriangle, Wrench, Info, Package, Users, Crown } from 'lucide-react';
 import { api } from '../lib/api.js';
-import { CATEGORY_LABELS, STATUS_LABELS, STATUS_COLORS, formatDate, formatDateTime, toast } from '../lib/utils.js';
-import type { Equipment, UsageLog, MaintenanceRecord, Consumable, ConsumableUsage } from '../../shared/types.js';
+import { CATEGORY_LABELS, STATUS_LABELS, STATUS_COLORS, formatDate, formatDateTime, toast, WAITLIST_STATUS_LABELS, WAITLIST_STATUS_COLORS, TIME_SLOT_LABELS } from '../lib/utils.js';
+import type { Equipment, UsageLog, MaintenanceRecord, Consumable, ConsumableUsage, Waitlist } from '../../shared/types.js';
 import { useAuthStore } from '../store/auth.js';
 
 export default function EquipmentDetail() {
@@ -15,6 +15,7 @@ export default function EquipmentDetail() {
   const [lifecycle, setLifecycle] = useState<any>(null);
   const [consumables, setConsumables] = useState<Consumable[]>([]);
   const [usageHistories, setUsageHistories] = useState<Record<number, ConsumableUsage[]>>({});
+  const [waitlist, setWaitlist] = useState<Waitlist[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [restockTarget, setRestockTarget] = useState<Consumable | null>(null);
   const [addForm, setAddForm] = useState({ name: '', current_stock: 0, safety_stock: 0, unit: '', unit_price: 0, supplier: '' });
@@ -25,6 +26,12 @@ export default function EquipmentDetail() {
   useEffect(() => {
     if (id) loadData(Number(id));
   }, [id]);
+
+  useEffect(() => {
+    if (tab === 'waitlist' && id) {
+      loadWaitlist(Number(id));
+    }
+  }, [tab, id]);
 
   const loadData = async (eqId: number) => {
     try {
@@ -47,6 +54,15 @@ export default function EquipmentDetail() {
         } catch { histories[c.id] = []; }
       }));
       setUsageHistories(histories);
+    } catch (err: any) {
+      toast(err.message, 'error');
+    }
+  };
+
+  const loadWaitlist = async (eqId: number) => {
+    try {
+      const data = await api.waitlist.list({ equipment_id: eqId, status: 'waiting' });
+      setWaitlist(data);
     } catch (err: any) {
       toast(err.message, 'error');
     }
@@ -105,6 +121,7 @@ export default function EquipmentDetail() {
             { k: 'usage', label: '使用记录', icon: Calendar },
             { k: 'maint', label: '维护记录', icon: Wrench },
             { k: 'consumable', label: '耗材库存', icon: Package },
+            { k: 'waitlist', label: '候补队列', icon: Users },
           ].map(t => {
             const Icon = t.icon;
             return (
@@ -208,6 +225,57 @@ export default function EquipmentDetail() {
                     </table>
                   )}
                 </div>
+              )}
+            </div>
+          )}
+          {tab === 'waitlist' && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-medium text-slate-700">候补排队情况</h3>
+                <span className="text-xs text-slate-500">共 {waitlist.length} 人排队中</span>
+              </div>
+              {waitlist.length === 0 ? (
+                <p className="text-slate-400 text-sm py-8 text-center">暂无候补排队</p>
+              ) : (
+                <div className="space-y-4">
+                  {['morning', 'afternoon', 'evening'].map(slot => {
+                    const slotWaitlist = waitlist
+                      .filter(w => w.time_slot === slot)
+                      .sort((a, b) => (a.position || 999) - (b.position || 999));
+                    if (slotWaitlist.length === 0) return null;
+                    return (
+                      <div key={slot} className="border border-slate-200 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-sm font-medium text-slate-700">{TIME_SLOT_LABELS[slot as keyof typeof TIME_SLOT_LABELS]}</span>
+                          <span className="text-xs text-slate-500">{slotWaitlist.length}人</span>
+                        </div>
+                        <div className="space-y-2">
+                          {slotWaitlist.map(w => (
+                            <div key={w.id} className="flex items-center gap-3 py-2 px-3 bg-slate-50 rounded-lg">
+                              <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${w.position === 1 ? 'bg-amber-100 text-amber-700' : w.position && w.position <= 3 ? 'bg-orange-100 text-orange-700' : 'bg-sky-100 text-sky-700'}`}>
+                                {w.position === 1 ? <Crown size={12} /> : w.position}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-slate-700 truncate">
+                                  {user?.role === 'student' ? '***' : w.student_name}
+                                </p>
+                                <p className="text-xs text-slate-500">{formatDate(w.reserve_date)}</p>
+                              </div>
+                              <span className={`badge ${WAITLIST_STATUS_COLORS[w.status]}`}>
+                                {WAITLIST_STATUS_LABELS[w.status]}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {user?.role === 'student' && (
+                <p className="text-xs text-slate-400 mt-4 text-center">
+                  提示：学生仅可查看自己的排队记录
+                </p>
               )}
             </div>
           )}

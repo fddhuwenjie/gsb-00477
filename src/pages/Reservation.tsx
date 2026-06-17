@@ -1,9 +1,22 @@
 import { useState, useEffect } from 'react';
-import { Plus, Check, X, Clock, XCircle, CalendarPlus, FileX, CalendarX, Users, FolderOpen } from 'lucide-react';
+import { Plus, Check, X, Clock, XCircle, CalendarPlus, FileX, CalendarX, Users, FolderOpen, Crown, Timer } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../store/auth.js';
-import { CATEGORY_LABELS, RESERVATION_STATUS_LABELS, RESERVATION_STATUS_COLORS, WAITLIST_STATUS_LABELS, WAITLIST_STATUS_COLORS, TIME_SLOT_LABELS, formatDate, toast } from '../lib/utils.js';
+import { CATEGORY_LABELS, RESERVATION_STATUS_LABELS, RESERVATION_STATUS_COLORS, WAITLIST_STATUS_LABELS, WAITLIST_STATUS_COLORS, TIME_SLOT_LABELS, formatDate, formatDateTime, toast } from '../lib/utils.js';
 import type { Reservation, Equipment, User, Waitlist, Project } from '../../shared/types.js';
+
+function getWaitlistStatusChangeTime(w: Waitlist): string | null {
+  if (w.status === 'promoted' && w.promoted_at) return w.promoted_at;
+  if (w.status === 'cancelled' && w.cancelled_at) return w.cancelled_at;
+  return w.created_at;
+}
+
+function getPositionBadgeClass(position: number | undefined): string {
+  if (!position) return 'bg-slate-100 text-slate-500';
+  if (position === 1) return 'bg-amber-100 text-amber-700';
+  if (position <= 3) return 'bg-orange-100 text-orange-700';
+  return 'bg-sky-100 text-sky-700';
+}
 
 export default function ReservationPage() {
   const { user } = useAuthStore();
@@ -209,23 +222,51 @@ export default function ReservationPage() {
             <p className="text-slate-400 text-sm py-12 text-center">暂无候补记录</p>
           ) : (
             <table className="table">
-              <thead><tr><th>设备名称</th><th>预约日期</th><th>时段</th><th>目的</th><th>排队位置</th><th>状态</th><th>操作</th></tr></thead>
+              <thead><tr><th>设备名称</th><th>预约日期</th><th>时段</th><th>目的</th><th>排队位置</th><th>状态</th><th>状态变更时间</th><th>操作</th></tr></thead>
               <tbody>
-                {waitlist.map(w => (
-                  <tr key={w.id}>
-                    <td className="font-medium">{w.equipment_name}</td>
-                    <td>{formatDate(w.reserve_date)}</td>
-                    <td>{TIME_SLOT_LABELS[w.time_slot].split(' ')[0]}</td>
-                    <td className="max-w-xs truncate">{w.purpose}</td>
-                    <td>{w.position ?? '-'}</td>
-                    <td><span className={`badge ${WAITLIST_STATUS_COLORS[w.status]}`}>{WAITLIST_STATUS_LABELS[w.status]}</span></td>
-                    <td>
-                      {w.status === 'waiting' && (
-                        <button className="btn-secondary h-7 text-xs" onClick={() => handleWaitlistCancel(w.id)}>取消</button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {waitlist.map(w => {
+                  const statusTime = getWaitlistStatusChangeTime(w);
+                  return (
+                    <tr key={w.id}>
+                      <td className="font-medium">{w.equipment_name}</td>
+                      <td>{formatDate(w.reserve_date)}</td>
+                      <td>{TIME_SLOT_LABELS[w.time_slot].split(' ')[0]}</td>
+                      <td className="max-w-xs truncate">{w.purpose}</td>
+                      <td>
+                        <div className="flex items-center gap-2">
+                          {w.status === 'waiting' ? (
+                            <>
+                              <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold ${getPositionBadgeClass(w.position)}`}>
+                                {w.position === 1 ? <Crown size={14} /> : w.position}
+                              </span>
+                              <span className="text-xs text-slate-500">位</span>
+                            </>
+                          ) : (
+                            <span className="text-slate-400 text-sm">-</span>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="flex flex-col gap-1">
+                          <span className={`badge ${WAITLIST_STATUS_COLORS[w.status]}`}>{WAITLIST_STATUS_LABELS[w.status]}</span>
+                          {w.status === 'promoted' && (
+                            <span className="text-xs text-emerald-600 flex items-center gap-1">
+                              <Timer size={10} />自动递补
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="text-xs text-slate-500">
+                        {statusTime ? formatDateTime(statusTime) : '-'}
+                      </td>
+                      <td>
+                        {w.status === 'waiting' && (
+                          <button className="btn-secondary h-7 text-xs" onClick={() => handleWaitlistCancel(w.id)}>取消</button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
