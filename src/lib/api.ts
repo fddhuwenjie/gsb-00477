@@ -190,11 +190,15 @@ export const api = {
       const qs = params ? '?' + new URLSearchParams(params as any).toString() : '';
       return request<Waitlist[]>(`/waitlist${qs}`);
     },
+    queue: (equipment_id: number, reserve_date: string, time_slot: string) =>
+      request<{ entries: Waitlist[]; waiting_count: number }>(
+        `/waitlist/queue?equipment_id=${equipment_id}&reserve_date=${reserve_date}&time_slot=${time_slot}`
+      ),
     join: (data: any) =>
       request<Waitlist>('/waitlist', { method: 'POST', body: JSON.stringify(data) }),
     cancel: (id: number) =>
       request<void>(`/waitlist/${id}/cancel`, { method: 'PUT' }),
-    position: (id: number) => request<{ position: number }>(`/waitlist/${id}/position`),
+    position: (id: number) => request<{ position: number | null; status: string; status_updated_at: string }>(`/waitlist/${id}/position`),
   },
   reports: {
     templates: () => request<ReportTemplate[]>('/reports/templates'),

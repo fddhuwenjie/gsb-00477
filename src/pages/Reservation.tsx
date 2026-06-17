@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Check, X, Clock, XCircle, CalendarPlus, FileX, CalendarX, Users, FolderOpen } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../store/auth.js';
-import { CATEGORY_LABELS, RESERVATION_STATUS_LABELS, RESERVATION_STATUS_COLORS, WAITLIST_STATUS_LABELS, WAITLIST_STATUS_COLORS, TIME_SLOT_LABELS, formatDate, toast } from '../lib/utils.js';
+import { CATEGORY_LABELS, RESERVATION_STATUS_LABELS, RESERVATION_STATUS_COLORS, WAITLIST_STATUS_LABELS, WAITLIST_STATUS_COLORS, TIME_SLOT_LABELS, formatDate, formatDateTime, toast } from '../lib/utils.js';
 import type { Reservation, Equipment, User, Waitlist, Project } from '../../shared/types.js';
 
 export default function ReservationPage() {
@@ -209,16 +209,49 @@ export default function ReservationPage() {
             <p className="text-slate-400 text-sm py-12 text-center">暂无候补记录</p>
           ) : (
             <table className="table">
-              <thead><tr><th>设备名称</th><th>预约日期</th><th>时段</th><th>目的</th><th>排队位置</th><th>状态</th><th>操作</th></tr></thead>
+              <thead><tr><th>设备名称</th><th>预约日期</th><th>时段</th><th>排队位置</th><th>状态</th><th>状态更新时间</th><th>操作</th></tr></thead>
               <tbody>
                 {waitlist.map(w => (
                   <tr key={w.id}>
                     <td className="font-medium">{w.equipment_name}</td>
                     <td>{formatDate(w.reserve_date)}</td>
                     <td>{TIME_SLOT_LABELS[w.time_slot].split(' ')[0]}</td>
-                    <td className="max-w-xs truncate">{w.purpose}</td>
-                    <td>{w.position ?? '-'}</td>
+                    <td>
+                      {w.status === 'waiting' && w.position ? (
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold ${
+                            w.position === 1 ? 'bg-amber-100 text-amber-700' :
+                            w.position === 2 ? 'bg-slate-200 text-slate-600' :
+                            w.position === 3 ? 'bg-orange-100 text-orange-700' :
+                            'bg-slate-100 text-slate-500'
+                          }`}>
+                            {w.position}
+                          </span>
+                          <span className="text-xs text-slate-500">位</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
+                    </td>
                     <td><span className={`badge ${WAITLIST_STATUS_COLORS[w.status]}`}>{WAITLIST_STATUS_LABELS[w.status]}</span></td>
+                    <td className="text-sm text-slate-500">
+                      {w.status === 'promoted' && w.promoted_at ? (
+                        <div>
+                          <div>{formatDateTime(w.promoted_at)}</div>
+                          <div className="text-xs text-emerald-600">已递补转正</div>
+                        </div>
+                      ) : w.status === 'cancelled' && w.cancelled_at ? (
+                        <div>
+                          <div>{formatDateTime(w.cancelled_at)}</div>
+                          <div className="text-xs text-slate-400">已取消</div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div>{formatDateTime(w.created_at)}</div>
+                          <div className="text-xs text-slate-400">加入排队</div>
+                        </div>
+                      )}
+                    </td>
                     <td>
                       {w.status === 'waiting' && (
                         <button className="btn-secondary h-7 text-xs" onClick={() => handleWaitlistCancel(w.id)}>取消</button>
