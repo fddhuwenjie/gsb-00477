@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Plus, Check, X, Clock, XCircle, CalendarPlus, FileX, CalendarX, Users, FolderOpen } from 'lucide-react';
+import { Plus, Check, X, Clock, XCircle, CalendarPlus, FileX, CalendarX, Users, FolderOpen, ArrowUpRight } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../store/auth.js';
-import { CATEGORY_LABELS, RESERVATION_STATUS_LABELS, RESERVATION_STATUS_COLORS, WAITLIST_STATUS_LABELS, WAITLIST_STATUS_COLORS, TIME_SLOT_LABELS, formatDate, toast } from '../lib/utils.js';
+import { CATEGORY_LABELS, RESERVATION_STATUS_LABELS, RESERVATION_STATUS_COLORS, WAITLIST_STATUS_LABELS, WAITLIST_STATUS_COLORS, TIME_SLOT_LABELS, formatDate, formatDateTime, toast } from '../lib/utils.js';
 import type { Reservation, Equipment, User, Waitlist, Project } from '../../shared/types.js';
 
 export default function ReservationPage() {
@@ -209,7 +209,7 @@ export default function ReservationPage() {
             <p className="text-slate-400 text-sm py-12 text-center">暂无候补记录</p>
           ) : (
             <table className="table">
-              <thead><tr><th>设备名称</th><th>预约日期</th><th>时段</th><th>目的</th><th>排队位置</th><th>状态</th><th>操作</th></tr></thead>
+              <thead><tr><th>设备名称</th><th>预约日期</th><th>时段</th><th>目的</th><th>排队位置</th><th>状态</th><th>状态变更时间</th><th>操作</th></tr></thead>
               <tbody>
                 {waitlist.map(w => (
                   <tr key={w.id}>
@@ -217,8 +217,28 @@ export default function ReservationPage() {
                     <td>{formatDate(w.reserve_date)}</td>
                     <td>{TIME_SLOT_LABELS[w.time_slot].split(' ')[0]}</td>
                     <td className="max-w-xs truncate">{w.purpose}</td>
-                    <td>{w.position ?? '-'}</td>
+                    <td>
+                      {w.status === 'waiting' && w.position ? (
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center">
+                            {Array.from({ length: Math.min(w.position, 5) }).map((_, i) => (
+                              <div key={i} className={`w-2 h-5 rounded-sm ${i < w.position ? 'bg-amber-400' : 'bg-slate-200'} ${i > 0 ? '-ml-0.5' : ''}`} />
+                            ))}
+                          </div>
+                          <span className="text-sm font-semibold text-amber-700">第 {w.position} 位</span>
+                        </div>
+                      ) : w.status === 'promoted' ? (
+                        <span className="flex items-center gap-1 text-emerald-600 text-sm font-medium">
+                          <ArrowUpRight size={14} />已递补
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
+                    </td>
                     <td><span className={`badge ${WAITLIST_STATUS_COLORS[w.status]}`}>{WAITLIST_STATUS_LABELS[w.status]}</span></td>
+                    <td className="text-sm text-slate-500">
+                      {w.status_changed_at ? formatDateTime(w.status_changed_at) : '-'}
+                    </td>
                     <td>
                       {w.status === 'waiting' && (
                         <button className="btn-secondary h-7 text-xs" onClick={() => handleWaitlistCancel(w.id)}>取消</button>

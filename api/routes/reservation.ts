@@ -219,14 +219,25 @@ router.put('/:id/cancel', authMiddleware, (req: Request, res: Response) => {
     return;
   }
 
-  db.prepare("UPDATE reservations SET status = 'cancelled' WHERE id = ?").run(req.params.id);
-  
-  const updated = db.prepare('SELECT * FROM reservations WHERE id = ?').get(req.params.id) as any;
-  if (updated) {
-    promoteWaitlist(updated.equipment_id, updated.reserve_date, updated.time_slot);
+  if (reservation.status === 'cancelled') {
+    res.json({ success: true, data: { idempotent: true, message: '该预约已取消，无需重复操作' } });
+    return;
+  }
+
+  if (!['pending', 'approved'].includes(reservation.status)) {
+    res.status(400).json({ success: false, error: '当前状态不可取消' });
+    return;
+  }
+
+  const updateResult = db.prepare(
+    "UPDATE reservations SET status = 'cancelled' WHERE id = ? AND status IN ('pending', 'approved')"
+  ).run(req.params.id);
+
+  if (updateResult.changes > 0) {
+    promoteWaitlist(reservation.equipment_id, reservation.reserve_date, reservation.time_slot);
   }
   
-  res.json({ success: true });
+  res.json({ success: true, data: { idempotent: false } });
 });
 
 export default router;

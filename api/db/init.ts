@@ -198,7 +198,8 @@ export function initDatabase() {
       purpose TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'waiting' CHECK(status IN ('waiting','promoted','cancelled')),
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      promoted_at DATETIME
+      promoted_at DATETIME,
+      cancelled_at DATETIME
     );
 
     CREATE TABLE IF NOT EXISTS report_templates (
