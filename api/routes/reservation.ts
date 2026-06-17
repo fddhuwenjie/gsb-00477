@@ -198,9 +198,11 @@ router.post('/auto-cancel-timeout', authMiddleware, (req: Request, res: Response
     AND NOT EXISTS (SELECT 1 FROM usage_logs ul WHERE ul.reservation_id = r.id)`).all() as any[];
   
   for (const r of timeoutReservations) {
-    db.prepare("UPDATE reservations SET status = 'cancelled' WHERE id = ?").run(r.id);
-    promoteWaitlist(r.equipment_id, r.reserve_date, r.time_slot);
-    cancelled.push(r.id);
+    const updateResult = db.prepare("UPDATE reservations SET status = 'cancelled' WHERE id = ? AND status = 'approved'").run(r.id);
+    if (updateResult.changes > 0) {
+      promoteWaitlist(r.equipment_id, r.reserve_date, r.time_slot);
+      cancelled.push(r.id);
+    }
   }
   
   res.json({ success: true, data: { cancelled } });
@@ -218,12 +220,15 @@ router.put('/:id/cancel', authMiddleware, (req: Request, res: Response) => {
     res.status(403).json({ success: false, error: '无权取消该预约' });
     return;
   }
+  if (reservation.status === 'cancelled' || reservation.status === 'rejected' || reservation.status === 'completed') {
+    res.json({ success: true, message: '预约已处理' });
+    return;
+  }
 
-  db.prepare("UPDATE reservations SET status = 'cancelled' WHERE id = ?").run(req.params.id);
+  const updateResult = db.prepare("UPDATE reservations SET status = 'cancelled' WHERE id = ? AND status IN ('pending', 'approved')").run(req.params.id);
   
-  const updated = db.prepare('SELECT * FROM reservations WHERE id = ?').get(req.params.id) as any;
-  if (updated) {
-    promoteWaitlist(updated.equipment_id, updated.reserve_date, updated.time_slot);
+  if (updateResult.changes > 0) {
+    promoteWaitlist(reservation.equipment_id, reservation.reserve_date, reservation.time_slot);
   }
   
   res.json({ success: true });

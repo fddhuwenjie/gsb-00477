@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ScanLine, ClipboardList, AlertTriangle, Check, X, Play, Square, Package } from 'lucide-react';
+import { ScanLine, ClipboardList, AlertTriangle, Check, X, Play, Square, Package, Timer } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../store/auth.js';
 import { URGENCY_LABELS, URGENCY_COLORS, FAULT_STATUS_LABELS, FAULT_STATUS_COLORS, formatDateTime, toast } from '../lib/utils.js';
@@ -222,7 +222,7 @@ export default function UsagePage() {
             <p className="text-slate-400 text-sm py-12 text-center">暂无使用记录</p>
           ) : (
             <table className="table">
-              <thead><tr><th>设备</th><th>使用人</th><th>签到时间</th><th>签退时间</th><th>实验内容</th><th>样品</th><th>状态</th></tr></thead>
+              <thead><tr><th>设备</th><th>使用人</th><th>签到时间</th><th>签退时间</th><th>实验内容</th><th>样品</th><th>状态</th><th>来源</th></tr></thead>
               <tbody>
                 {logs.map(l => (
                   <tr key={l.id}>
@@ -233,6 +233,17 @@ export default function UsagePage() {
                     <td className="max-w-xs truncate">{l.experiment_content || '-'}</td>
                     <td>{l.sample_count || 0}</td>
                     <td>{l.has_anomaly ? <span className="badge bg-red-100 text-red-700">有异常</span> : <span className="badge bg-emerald-100 text-emerald-700">正常</span>}</td>
+                    <td>
+                      {l.reservation_waitlist_id ? (
+                        <span className="badge bg-emerald-100 text-emerald-700 flex items-center gap-1">
+                          <Timer size={10} />候补递补
+                        </span>
+                      ) : l.reservation_id ? (
+                        <span className="badge bg-sky-100 text-sky-700">预约</span>
+                      ) : (
+                        <span className="badge bg-slate-100 text-slate-600">直接使用</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

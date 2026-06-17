@@ -91,10 +91,13 @@ router.post('/checkout', authMiddleware, (req: Request, res: Response) => {
 
 router.get('/logs', authMiddleware, (req: Request, res: Response) => {
   const user = (req as any).user as User;
-  let sql = `SELECT ul.*, e.name as equipment_name, u.name as user_name 
+  let sql = `SELECT ul.*, e.name as equipment_name, u.name as user_name,
+             r.waitlist_id as reservation_waitlist_id
              FROM usage_logs ul 
              LEFT JOIN equipment e ON ul.equipment_id = e.id 
-             LEFT JOIN users u ON ul.user_id = u.id WHERE 1=1`;
+             LEFT JOIN users u ON ul.user_id = u.id 
+             LEFT JOIN reservations r ON ul.reservation_id = r.id
+             WHERE 1=1`;
   const params: any[] = [];
 
   if (user.role === 'student') {
