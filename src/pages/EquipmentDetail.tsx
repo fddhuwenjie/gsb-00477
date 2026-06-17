@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Calendar, AlertTriangle, Wrench, Info, Package } from 'lucide-react';
+import { ArrowLeft, Calendar, AlertTriangle, Wrench, Info, Package, Users } from 'lucide-react';
 import { api } from '../lib/api.js';
-import { CATEGORY_LABELS, STATUS_LABELS, STATUS_COLORS, formatDate, formatDateTime, toast } from '../lib/utils.js';
-import type { Equipment, UsageLog, MaintenanceRecord, Consumable, ConsumableUsage } from '../../shared/types.js';
+import { CATEGORY_LABELS, STATUS_LABELS, STATUS_COLORS, WAITLIST_STATUS_LABELS, WAITLIST_STATUS_COLORS, TIME_SLOT_LABELS, formatDate, formatDateTime, toast } from '../lib/utils.js';
+import type { Equipment, UsageLog, MaintenanceRecord, Consumable, ConsumableUsage, Waitlist } from '../../shared/types.js';
 import { useAuthStore } from '../store/auth.js';
 
 export default function EquipmentDetail() {
@@ -21,6 +21,7 @@ export default function EquipmentDetail() {
   const [restockForm, setRestockForm] = useState({ quantity: 0, unit_price: 0 });
   const { user } = useAuthStore();
   const [tab, setTab] = useState('info');
+  const [waitlist, setWaitlist] = useState<Waitlist[]>([]);
 
   useEffect(() => {
     if (id) loadData(Number(id));
@@ -28,18 +29,20 @@ export default function EquipmentDetail() {
 
   const loadData = async (eqId: number) => {
     try {
-      const [eq, lg, rc, lc, cons] = await Promise.all([
+      const [eq, lg, rc, lc, cons, wl] = await Promise.all([
         api.equipment.get(eqId),
         api.usage.logs().then(l => l.filter(x => x.equipment_id === eqId)),
         api.maintenance.records(eqId),
         api.maintenance.lifecycle(eqId),
         api.consumables.list({ equipment_id: eqId }),
+        api.waitlist.list({ equipment_id: eqId, status: 'waiting' }).catch(() => []),
       ]);
       setEquipment(eq);
       setLogs(lg);
       setRecords(rc);
       setLifecycle(lc);
       setConsumables(cons);
+      setWaitlist(wl as Waitlist[]);
       const histories: Record<number, ConsumableUsage[]> = {};
       await Promise.all(cons.map(async c => {
         try {
@@ -103,6 +106,7 @@ export default function EquipmentDetail() {
           {[
             { k: 'info', label: '注意事项', icon: Info },
             { k: 'usage', label: '使用记录', icon: Calendar },
+            { k: 'waitlist', label: '候补队列', icon: Users },
             { k: 'maint', label: '维护记录', icon: Wrench },
             { k: 'consumable', label: '耗材库存', icon: Package },
           ].map(t => {
@@ -137,6 +141,38 @@ export default function EquipmentDetail() {
                   ))}
                 </tbody>
               </table>
+            )
+          )}
+          {tab === 'waitlist' && (
+            waitlist.length === 0 ? (
+              <p className="text-slate-400 text-sm py-8 text-center">暂无排队候补</p>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm text-slate-500">当前共有 <span className="font-semibold text-slate-700">{waitlist.length}</span> 人在候补队列中</p>
+                <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg overflow-hidden">
+                  {waitlist.map((w, idx) => (
+                    <div key={w.id} className="p-3 flex items-center justify-between hover:bg-slate-50">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${idx === 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                          {idx + 1}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">{w.student_name || '用户' + w.student_id}</p>
+                          <p className="text-xs text-slate-500">
+                            {formatDate(w.reserve_date)} · {TIME_SLOT_LABELS[w.time_slot].split(' ')[0]}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className={`badge ${WAITLIST_STATUS_COLORS[w.status]}`}>
+                          {WAITLIST_STATUS_LABELS[w.status]}
+                        </span>
+                        <p className="text-xs text-slate-400 mt-1">{formatDateTime(w.created_at)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )
           )}
           {tab === 'maint' && (

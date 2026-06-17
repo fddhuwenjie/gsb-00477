@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Plus, Check, X, Clock, XCircle, CalendarPlus, FileX, CalendarX, Users, FolderOpen } from 'lucide-react';
+import { Plus, Check, X, Clock, XCircle, CalendarPlus, FileX, CalendarX, Users, FolderOpen, RefreshCw, TrendingUp } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../store/auth.js';
-import { CATEGORY_LABELS, RESERVATION_STATUS_LABELS, RESERVATION_STATUS_COLORS, WAITLIST_STATUS_LABELS, WAITLIST_STATUS_COLORS, TIME_SLOT_LABELS, formatDate, toast } from '../lib/utils.js';
+import { CATEGORY_LABELS, RESERVATION_STATUS_LABELS, RESERVATION_STATUS_COLORS, WAITLIST_STATUS_LABELS, WAITLIST_STATUS_COLORS, TIME_SLOT_LABELS, formatDate, formatDateTime, toast } from '../lib/utils.js';
 import type { Reservation, Equipment, User, Waitlist, Project } from '../../shared/types.js';
 
 export default function ReservationPage() {
@@ -205,29 +205,81 @@ export default function ReservationPage() {
         )
       ) : activeTab === 'waitlist' ? (
         <div className="card">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+            <h3 className="font-semibold text-slate-800">我的候补</h3>
+            <button className="btn-secondary h-8 text-xs" onClick={loadWaitlist}>
+              <RefreshCw size={14} className="mr-1" />刷新
+            </button>
+          </div>
           {waitlist.length === 0 ? (
             <p className="text-slate-400 text-sm py-12 text-center">暂无候补记录</p>
           ) : (
-            <table className="table">
-              <thead><tr><th>设备名称</th><th>预约日期</th><th>时段</th><th>目的</th><th>排队位置</th><th>状态</th><th>操作</th></tr></thead>
-              <tbody>
-                {waitlist.map(w => (
-                  <tr key={w.id}>
-                    <td className="font-medium">{w.equipment_name}</td>
-                    <td>{formatDate(w.reserve_date)}</td>
-                    <td>{TIME_SLOT_LABELS[w.time_slot].split(' ')[0]}</td>
-                    <td className="max-w-xs truncate">{w.purpose}</td>
-                    <td>{w.position ?? '-'}</td>
-                    <td><span className={`badge ${WAITLIST_STATUS_COLORS[w.status]}`}>{WAITLIST_STATUS_LABELS[w.status]}</span></td>
-                    <td>
+            <div className="divide-y divide-slate-100">
+              {waitlist.map(w => (
+                <div key={w.id} className="p-4 hover:bg-slate-50 transition-colors">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-slate-800">{w.equipment_name}</span>
+                        <span className={`badge ${WAITLIST_STATUS_COLORS[w.status]}`}>
+                          {WAITLIST_STATUS_LABELS[w.status]}
+                        </span>
+                        {w.status === 'waiting' && w.position !== undefined && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-700">
+                            <Users size={12} />
+                            第 {w.position} 位
+                          </span>
+                        )}
+                        {w.status === 'promoted' && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
+                            <TrendingUp size={12} />
+                            已递补
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500 flex flex-wrap gap-x-4 gap-y-1">
+                        <span>{formatDate(w.reserve_date)}</span>
+                        <span>{TIME_SLOT_LABELS[w.time_slot].split(' ')[0]}</span>
+                      </div>
+                      <div className="mt-2 text-xs text-slate-400 space-y-0.5">
+                        <div className="flex items-center gap-1">
+                          <Clock size={12} />
+                          <span>加入时间：{formatDateTime(w.created_at)}</span>
+                        </div>
+                        {w.updated_at && (
+                          <div className="flex items-center gap-1">
+                            <RefreshCw size={12} />
+                            <span>最近变更：{formatDateTime(w.updated_at)}</span>
+                          </div>
+                        )}
+                        {w.status === 'promoted' && w.promoted_at && (
+                          <div className="flex items-center gap-1 text-emerald-600">
+                            <TrendingUp size={12} />
+                            <span>递补时间：{formatDateTime(w.promoted_at)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex-shrink-0">
                       {w.status === 'waiting' && (
-                        <button className="btn-secondary h-7 text-xs" onClick={() => handleWaitlistCancel(w.id)}>取消</button>
+                        <button className="btn-secondary h-8 text-xs" onClick={() => handleWaitlistCancel(w.id)}>
+                          取消候补
+                        </button>
                       )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      {w.status === 'promoted' && w.promoted_reservation_id && (
+                        <span className="text-xs text-emerald-600 font-medium">
+                          已生成预约 #{w.promoted_reservation_id}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-2 text-sm text-slate-600 bg-slate-100/50 rounded px-2 py-1">
+                    <span className="text-slate-400 text-xs">使用目的：</span>
+                    {w.purpose}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       ) : (

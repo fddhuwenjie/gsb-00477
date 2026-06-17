@@ -8,7 +8,7 @@ const router = express.Router();
 
 router.get('/', authMiddleware, (req: Request, res: Response) => {
   const user = (req as any).user as User;
-  const { status } = req.query;
+  const { status, equipment_id, reserve_date, time_slot } = req.query;
   let sql = `SELECT w.*, e.name as equipment_name, u.name as student_name,
              (SELECT COUNT(*) FROM waitlist w2
               WHERE w2.equipment_id = w.equipment_id
@@ -29,6 +29,19 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
   if (status) {
     sql += ' AND w.status = ?';
     params.push(status);
+  }
+
+  if (equipment_id) {
+    sql += ' AND w.equipment_id = ?';
+    params.push(equipment_id);
+  }
+  if (reserve_date) {
+    sql += ' AND w.reserve_date = ?';
+    params.push(reserve_date);
+  }
+  if (time_slot) {
+    sql += ' AND w.time_slot = ?';
+    params.push(time_slot);
   }
 
   sql += ' ORDER BY w.created_at DESC';
@@ -74,8 +87,8 @@ router.post('/', authMiddleware, roleMiddleware('student'), (req: Request, res: 
   }
 
   const result = db.prepare(`INSERT INTO waitlist
-    (equipment_id, student_id, reserve_date, time_slot, purpose, status)
-    VALUES (?, ?, ?, ?, ?, 'waiting')`).run(
+    (equipment_id, student_id, reserve_date, time_slot, purpose, status, updated_at)
+    VALUES (?, ?, ?, ?, ?, 'waiting', datetime('now'))`).run(
     equipment_id, user.id, reserve_date, time_slot, purpose
   );
 
@@ -107,7 +120,17 @@ router.put('/:id/cancel', authMiddleware, (req: Request, res: Response) => {
     return;
   }
 
-  db.prepare("UPDATE waitlist SET status = 'cancelled' WHERE id = ?").run(req.params.id);
+  if (entry.status === 'cancelled') {
+    res.json({ success: true, message: '已取消（幂等）' });
+    return;
+  }
+
+  if (entry.status === 'promoted') {
+    res.status(400).json({ success: false, error: '已递补的排队无法取消' });
+    return;
+  }
+
+  db.prepare("UPDATE waitlist SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?").run(req.params.id);
   res.json({ success: true });
 });
 
@@ -125,28 +148,52 @@ router.get('/:id/position', authMiddleware, (req: Request, res: Response) => {
     entry.equipment_id, entry.reserve_date, entry.time_slot, entry.id
   ) as any;
 
-  res.json({ success: true, data: { position: position.pos + 1 } });
+  res.json({ success: true, data: { position: position.pos + 1, status: entry.status, updated_at: entry.updated_at, promoted_at: entry.promoted_at } });
 });
 
-export function promoteWaitlist(equipment_id: number, reserve_date: string, time_slot: string): any {
+export function promoteWaitlist(equipment_id: number, reserve_date: string, time_slot: string): { promoted: boolean; entry?: Waitlist; reason?: string } {
+  const slotTaken = db.prepare(`SELECT id FROM reservations
+    WHERE equipment_id = ? AND reserve_date = ? AND time_slot = ? AND status IN ('pending', 'approved')`).get(
+    equipment_id, reserve_date, time_slot
+  );
+
+  if (slotTaken) {
+    return { promoted: false, reason: 'slot_still_occupied' };
+  }
+
   const entry: any = db.prepare(`SELECT * FROM waitlist
     WHERE equipment_id = ? AND reserve_date = ? AND time_slot = ? AND status = 'waiting'
-    ORDER BY created_at ASC LIMIT 1`).get(equipment_id, reserve_date, time_slot);
+    ORDER BY created_at ASC, id ASC LIMIT 1`).get(equipment_id, reserve_date, time_slot);
 
-  if (!entry) return null;
+  if (!entry) {
+    return { promoted: false, reason: 'no_waiting_entries' };
+  }
 
-  db.prepare("UPDATE waitlist SET status = 'promoted', promoted_at = datetime('now') WHERE id = ?").run(entry.id);
+  const updateResult = db.prepare("UPDATE waitlist SET status = 'promoted', promoted_at = datetime('now'), updated_at = datetime('now') WHERE id = ? AND status = 'waiting'").run(entry.id);
+
+  if (updateResult.changes === 0) {
+    return { promoted: false, reason: 'race_condition_already_processed' };
+  }
 
   const equipment: any = db.prepare('SELECT manager_id FROM equipment WHERE id = ?').get(equipment_id);
   const tutor_id = equipment?.manager_id || 1;
 
-  db.prepare(`INSERT INTO reservations
-    (equipment_id, student_id, tutor_id, reserve_date, time_slot, purpose, status, approved_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'approved', datetime('now'))`).run(
+  const insertResult = db.prepare(`INSERT INTO reservations
+    (equipment_id, student_id, tutor_id, reserve_date, time_slot, purpose, status, approved_at, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'approved', datetime('now'), datetime('now'))`).run(
     entry.equipment_id, entry.student_id, tutor_id, entry.reserve_date, entry.time_slot, entry.purpose
   );
 
-  return db.prepare('SELECT * FROM waitlist WHERE id = ?').get(entry.id);
+  db.prepare('UPDATE waitlist SET promoted_reservation_id = ? WHERE id = ?').run(insertResult.lastInsertRowid, entry.id);
+
+  const promotedEntry = db.prepare(`SELECT w.*, e.name as equipment_name, u.name as student_name,
+    1 as position
+    FROM waitlist w
+    LEFT JOIN equipment e ON w.equipment_id = e.id
+    LEFT JOIN users u ON w.student_id = u.id
+    WHERE w.id = ?`).get(entry.id) as Waitlist;
+
+  return { promoted: true, entry: promotedEntry };
 }
 
 export default router;

@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { ScanLine, ClipboardList, AlertTriangle, Check, X, Play, Square, Package } from 'lucide-react';
+import { ScanLine, ClipboardList, AlertTriangle, Check, X, Play, Square, Package, Users, TrendingUp } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../store/auth.js';
-import { URGENCY_LABELS, URGENCY_COLORS, FAULT_STATUS_LABELS, FAULT_STATUS_COLORS, formatDateTime, toast } from '../lib/utils.js';
-import type { UsageLog, FaultReport, Equipment, Consumable } from '../../shared/types.js';
+import { URGENCY_LABELS, URGENCY_COLORS, FAULT_STATUS_LABELS, FAULT_STATUS_COLORS, WAITLIST_STATUS_LABELS, WAITLIST_STATUS_COLORS, TIME_SLOT_LABELS, formatDate, formatDateTime, toast } from '../lib/utils.js';
+import type { UsageLog, FaultReport, Equipment, Consumable, Waitlist } from '../../shared/types.js';
 
 export default function UsagePage() {
   const { user } = useAuthStore();
@@ -19,6 +19,7 @@ export default function UsagePage() {
   const [faultForm, setFaultForm] = useState({ equipment_id: '', description: '', urgency: 'medium' });
   const [consumables, setConsumables] = useState<Consumable[]>([]);
   const [consumableUsage, setConsumableUsage] = useState<Record<number, number>>({});
+  const [waitlist, setWaitlist] = useState<Waitlist[]>([]);
 
   useEffect(() => {
     loadData();
@@ -35,10 +36,16 @@ export default function UsagePage() {
 
   const loadData = async () => {
     try {
-      const [l, f, e] = await Promise.all([api.usage.logs(), api.usage.faults(), api.equipment.list()]);
+      const [l, f, e, wl] = await Promise.all([
+        api.usage.logs(),
+        api.usage.faults(),
+        api.equipment.list(),
+        api.waitlist.list({ status: 'waiting' }).catch(() => []),
+      ]);
       setLogs(l);
       setFaults(f);
       setEquipment(e);
+      setWaitlist(wl as Waitlist[]);
       const active = l.find(x => !x.checkout_time && x.user_id === user?.id);
       if (active) setActiveLog(active);
     } catch (err: any) {
@@ -127,8 +134,32 @@ export default function UsagePage() {
       </div>
 
       {activeTab === 'checkin' && (
-        <div className="card p-8">
-          <div className="flex flex-col items-center">
+        <>
+          {waitlist.length > 0 && (
+            <div className="card p-4 mb-4 bg-amber-50/50 border-amber-200">
+              <div className="flex items-center gap-2 mb-3">
+                <Users size={18} className="text-amber-600" />
+                <span className="font-semibold text-amber-800">我的候补队列</span>
+                <span className="badge bg-amber-100 text-amber-700 ml-auto">{waitlist.length} 个</span>
+              </div>
+              <div className="space-y-2">
+                {waitlist.slice(0, 3).map(w => (
+                  <div key={w.id} className="flex items-center justify-between text-sm bg-white rounded px-3 py-2 border border-amber-100">
+                    <div>
+                      <span className="font-medium text-slate-700">{w.equipment_name}</span>
+                      <span className="text-slate-400 mx-2">·</span>
+                      <span className="text-slate-500">{formatDate(w.reserve_date)} {TIME_SLOT_LABELS[w.time_slot].split(' ')[0]}</span>
+                    </div>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-700">
+                      第 {w.position} 位
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="card p-8">
+            <div className="flex flex-col items-center">
             <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-sky-500 to-sky-600 flex items-center justify-center shadow-lg shadow-sky-500/30 mb-6">
               <ScanLine size={44} className="text-white" />
             </div>
@@ -214,6 +245,7 @@ export default function UsagePage() {
             )}
           </div>
         </div>
+        </>
       )}
 
       {activeTab === 'logs' && (

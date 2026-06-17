@@ -234,9 +234,11 @@ export interface Waitlist {
   status: WaitlistStatus;
   created_at: string;
   promoted_at?: string;
+  updated_at?: string;
   equipment_name?: string;
   student_name?: string;
   position?: number;
+  promoted_reservation_id?: number;
 }
 
 export interface ReportTemplate {
