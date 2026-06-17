@@ -198,7 +198,9 @@ export function initDatabase() {
       purpose TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'waiting' CHECK(status IN ('waiting','promoted','cancelled')),
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      promoted_at DATETIME
+      promoted_at DATETIME,
+      cancelled_at DATETIME,
+      status_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS report_templates (
@@ -230,6 +232,16 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_waitlist_equipment ON waitlist(equipment_id, reserve_date, time_slot, status);
     CREATE INDEX IF NOT EXISTS idx_waitlist_student ON waitlist(student_id);
   `);
+
+  const columns = db.prepare("PRAGMA table_info(waitlist)").all() as { name: string }[];
+  const colNames = columns.map(c => c.name);
+  if (!colNames.includes('cancelled_at')) {
+    db.exec("ALTER TABLE waitlist ADD COLUMN cancelled_at DATETIME");
+  }
+  if (!colNames.includes('status_updated_at')) {
+    db.exec("ALTER TABLE waitlist ADD COLUMN status_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP");
+    db.exec("UPDATE waitlist SET status_updated_at = COALESCE(promoted_at, created_at) WHERE status_updated_at IS NULL");
+  }
 
   const labCount = db.prepare('SELECT COUNT(*) as count FROM labs').get() as { count: number };
   if (labCount.count === 0) {

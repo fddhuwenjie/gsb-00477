@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Calendar, AlertTriangle, Wrench, Info, Package } from 'lucide-react';
+import { ArrowLeft, Calendar, AlertTriangle, Wrench, Info, Package, Users, Clock } from 'lucide-react';
 import { api } from '../lib/api.js';
-import { CATEGORY_LABELS, STATUS_LABELS, STATUS_COLORS, formatDate, formatDateTime, toast } from '../lib/utils.js';
-import type { Equipment, UsageLog, MaintenanceRecord, Consumable, ConsumableUsage } from '../../shared/types.js';
+import { CATEGORY_LABELS, STATUS_LABELS, STATUS_COLORS, formatDate, formatDateTime, TIME_SLOT_LABELS, WAITLIST_STATUS_LABELS, WAITLIST_STATUS_COLORS, toast } from '../lib/utils.js';
+import type { Equipment, UsageLog, MaintenanceRecord, Consumable, ConsumableUsage, Waitlist } from '../../shared/types.js';
 import { useAuthStore } from '../store/auth.js';
 
 export default function EquipmentDetail() {
@@ -21,10 +21,31 @@ export default function EquipmentDetail() {
   const [restockForm, setRestockForm] = useState({ quantity: 0, unit_price: 0 });
   const { user } = useAuthStore();
   const [tab, setTab] = useState('info');
+  const [waitlistDate, setWaitlistDate] = useState(new Date().toISOString().split('T')[0]);
+  const [waitlistSlot, setWaitlistSlot] = useState('morning');
+  const [waitlistQueue, setWaitlistQueue] = useState<Waitlist[]>([]);
+  const [waitingCount, setWaitingCount] = useState(0);
 
   useEffect(() => {
     if (id) loadData(Number(id));
   }, [id]);
+
+  useEffect(() => {
+    if (tab === 'waitlist' && id) {
+      loadWaitlistQueue(Number(id));
+    }
+  }, [tab, waitlistDate, waitlistSlot, id]);
+
+  const loadWaitlistQueue = async (eqId: number) => {
+    try {
+      const data = await api.waitlist.queue(eqId, waitlistDate, waitlistSlot);
+      setWaitlistQueue(data.entries);
+      setWaitingCount(data.waiting_count);
+    } catch {
+      setWaitlistQueue([]);
+      setWaitingCount(0);
+    }
+  };
 
   const loadData = async (eqId: number) => {
     try {
@@ -103,6 +124,7 @@ export default function EquipmentDetail() {
           {[
             { k: 'info', label: '注意事项', icon: Info },
             { k: 'usage', label: '使用记录', icon: Calendar },
+            { k: 'waitlist', label: '候补排队', icon: Users },
             { k: 'maint', label: '维护记录', icon: Wrench },
             { k: 'consumable', label: '耗材库存', icon: Package },
           ].map(t => {
@@ -138,6 +160,71 @@ export default function EquipmentDetail() {
                 </tbody>
               </table>
             )
+          )}
+          {tab === 'waitlist' && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap gap-4 items-end">
+                <div>
+                  <label className="block text-sm text-slate-600 mb-1">选择日期</label>
+                  <input type="date" className="input" min={new Date().toISOString().split('T')[0]} value={waitlistDate} onChange={e => setWaitlistDate(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-600 mb-1">选择时段</label>
+                  <select className="input" value={waitlistSlot} onChange={e => setWaitlistSlot(e.target.value)}>
+                    {Object.entries(TIME_SLOT_LABELS).map(([k, v]) => (<option key={k} value={k}>{v}</option>))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2 ml-auto">
+                  <Users size={18} className="text-sky-600" />
+                  <span className="text-sm font-medium text-slate-700">当前候补：{waitingCount} 人</span>
+                </div>
+              </div>
+              {waitlistQueue.length === 0 ? (
+                <p className="text-slate-400 text-sm py-12 text-center">该时段暂无候补记录</p>
+              ) : (
+                <div className="space-y-3">
+                  {waitlistQueue.filter(w => w.status === 'waiting').map((w, idx) => (
+                    <div key={w.id} className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                      <div className={`flex items-center justify-center w-10 h-10 rounded-full text-lg font-bold ${
+                        idx === 0 ? 'bg-amber-100 text-amber-700' :
+                        idx === 1 ? 'bg-slate-200 text-slate-600' :
+                        idx === 2 ? 'bg-orange-100 text-orange-700' :
+                        'bg-slate-100 text-slate-500'
+                      }`}>
+                        {idx + 1}
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium text-slate-800">{w.student_name || '未知用户'}</div>
+                        <div className="text-xs text-slate-500 flex items-center gap-3">
+                          <span className="flex items-center gap-1"><Clock size={12} /> 加入时间：{formatDateTime(w.created_at)}</span>
+                        </div>
+                      </div>
+                      <span className={`badge ${WAITLIST_STATUS_COLORS[w.status]}`}>{WAITLIST_STATUS_LABELS[w.status]}</span>
+                    </div>
+                  ))}
+                  {waitlistQueue.filter(w => w.status !== 'waiting').length > 0 && (
+                    <div className="pt-4 border-t border-slate-200">
+                      <p className="text-xs text-slate-400 mb-2">历史记录</p>
+                      {waitlistQueue.filter(w => w.status !== 'waiting').map(w => (
+                        <div key={w.id} className="flex items-center gap-4 p-2 opacity-60">
+                          <div className="flex items-center justify-center w-10 h-10 rounded-full text-sm font-bold bg-slate-100 text-slate-400">
+                            -
+                          </div>
+                          <div className="flex-1">
+                            <div className="font-medium text-slate-600">{w.student_name || '未知用户'}</div>
+                            <div className="text-xs text-slate-400">
+                              {w.status === 'promoted' && w.promoted_at ? `递补转正：${formatDateTime(w.promoted_at)}` : ''}
+                              {w.status === 'cancelled' && w.cancelled_at ? `取消时间：${formatDateTime(w.cancelled_at)}` : ''}
+                            </div>
+                          </div>
+                          <span className={`badge ${WAITLIST_STATUS_COLORS[w.status]}`}>{WAITLIST_STATUS_LABELS[w.status]}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
           {tab === 'maint' && (
             records.length === 0 ? <p className="text-slate-400 text-sm py-8 text-center">暂无维护记录</p> : (

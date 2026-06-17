@@ -180,7 +180,13 @@ router.put('/:id/reject', authMiddleware, roleMiddleware('tutor', 'admin'), (req
     return;
   }
 
+  if (reservation.status !== 'pending') {
+    res.status(400).json({ success: false, error: '该预约已处理' });
+    return;
+  }
+
   db.prepare("UPDATE reservations SET status = 'rejected' WHERE id = ?").run(req.params.id);
+  promoteWaitlist(reservation.equipment_id, reservation.reserve_date, reservation.time_slot);
   res.json({ success: true });
 });
 
@@ -219,11 +225,17 @@ router.put('/:id/cancel', authMiddleware, (req: Request, res: Response) => {
     return;
   }
 
+  if (reservation.status === 'cancelled' || reservation.status === 'completed' || reservation.status === 'rejected') {
+    res.json({ success: true, message: '预约已处理' });
+    return;
+  }
+
+  const wasActive = reservation.status === 'pending' || reservation.status === 'approved';
+
   db.prepare("UPDATE reservations SET status = 'cancelled' WHERE id = ?").run(req.params.id);
   
-  const updated = db.prepare('SELECT * FROM reservations WHERE id = ?').get(req.params.id) as any;
-  if (updated) {
-    promoteWaitlist(updated.equipment_id, updated.reserve_date, updated.time_slot);
+  if (wasActive) {
+    promoteWaitlist(reservation.equipment_id, reservation.reserve_date, reservation.time_slot);
   }
   
   res.json({ success: true });
